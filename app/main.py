@@ -11,13 +11,15 @@ from fastapi import Depends, FastAPI
 
 from app.config import Settings, get_settings
 
+_settings = get_settings()
+
 app = FastAPI(
-    title="fleet-monitor",
+    title=_settings.app_name,
     description=(
         "Central API that tracks remote nodes through periodic heartbeats. "
         "Built for fleets with intermittent connectivity."
     ),
-    version="0.1.0",
+    version=_settings.app_version,
 )
 
 
