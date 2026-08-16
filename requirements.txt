@@ -5,3 +5,11 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic-settings==2.5.2
+
+# ORM: SQLAlchemy and Pydantic in a single class definition, so a table and its
+# validation schema are declared once.
+sqlmodel==0.0.22
+
+# PostgreSQL driver. The binary distribution ships the compiled libpq, which
+# avoids needing a C toolchain in the Docker build.
+psycopg[binary]==3.2.3
