@@ -1,0 +1,7 @@
+# Runtime dependencies. These are the only packages installed into the
+# production image (see Dockerfile). Versions are pinned so that a build today
+# and a build in six months produce the same environment.
+
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic-settings==2.5.2

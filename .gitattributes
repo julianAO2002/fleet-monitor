@@ -1,0 +1,5 @@
+# Normalise line endings to LF inside the repository regardless of the
+# operating system used to author the files. The application runs in Linux
+# containers, where a stray CR breaks shell scripts in ways that are hard to
+# diagnose.
+* text=auto eol=lf

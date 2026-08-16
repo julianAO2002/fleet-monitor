@@ -1,0 +1,40 @@
+# ── Secrets ─────────────────────────────────────────
+# Real credentials live here and must never reach the repository.
+# The template with placeholder values is .env.example, which IS tracked.
+.env
+.env.*
+!.env.example
+
+# ── Local working notes ─────────────────────────────
+# Personal planning and assistant instructions. Useful locally, not part of
+# the published project.
+PLAN.md
+CLAUDE.md
+
+# ── Python bytecode ─────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ── Virtual environment ─────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Packaging / build ───────────────────────────────
+build/
+dist/
+*.egg-info/
+
+# ── Tooling caches ──────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Editors and OS ──────────────────────────────────
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
