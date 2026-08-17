@@ -1,0 +1,6 @@
+# The agent's dependencies, deliberately separate from the API's.
+#
+# It speaks HTTP to the central API and nothing else: no web framework, no ORM,
+# no database driver. A vessel never touches the database directly.
+
+httpx==0.27.2
