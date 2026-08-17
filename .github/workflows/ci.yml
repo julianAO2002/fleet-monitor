@@ -1,0 +1,166 @@
+name: CI
+
+# Runs on every push to the long-lived branches and on every pull request, so
+# a change is verified before review rather than after merge. A machine that
+# starts empty also proves requirements.txt is complete: a dependency that only
+# exists in a developer's environment fails here.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+# A new push to the same branch cancels the run still in flight. No value in
+# finishing a check against code that has already been replaced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ── Style and obvious errors ──────────────────────
+  # Separate and first: it finishes in seconds, so a formatting slip does not
+  # wait behind the full suite to be reported.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          # Restores pip's downloads between runs instead of fetching every
+          # package again. Keyed on the requirements files, so the cache is
+          # discarded exactly when the dependencies change.
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install development dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Check style
+        run: ruff check app/ agent/ tests/
+
+      - name: Check formatting
+        run: ruff format --check app/ agent/ tests/
+
+  # ── Tests ─────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    services:
+      # A real PostgreSQL for the duration of this job. SQLite is forgiving in
+      # ways PostgreSQL is not, and the suite that only ever ran against SQLite
+      # could not tell the difference.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fleet
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: fleet_test
+        ports:
+          - 5432:5432
+        # The job waits for this before running a step, the same reason the
+        # Compose file uses condition: service_healthy.
+        options: >-
+          --health-cmd "pg_isready -U fleet -d fleet_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # Fast pass. Catches most regressions in under a second, so a broken
+      # build is reported before the slower pass has finished starting.
+      - name: Run tests against SQLite
+        run: pytest -q
+
+      # Same tests, real engine. This is the pass that would catch behaviour
+      # SQLite papers over.
+      - name: Run tests against PostgreSQL
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://fleet:ci-password@localhost:5432/fleet_test
+        run: pytest -q
+
+  # ── Image ─────────────────────────────────────────
+  build:
+    name: Build images
+    runs-on: ubuntu-latest
+
+    # Gated behind both checks. Without this the image would be built from code
+    # known to be broken — a deployable artefact of a failing commit.
+    needs: [lint, test]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          # Built and verified, never pushed to a registry. This pipeline is
+          # continuous integration: it proves the commit is sound. Publishing
+          # and releasing it would be continuous deployment, which this project
+          # deliberately does not do.
+          push: false
+          load: true
+          tags: fleet-monitor:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./agent/Dockerfile
+          push: false
+          tags: fleet-monitor-agent:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # A successful build only proves the image assembles. This proves it
+      # starts, serves, and does so as the unprivileged user it declares.
+      - name: Verify the image runs and answers
+        run: |
+          docker run -d --name ci-api -p 8000:8000 \
+            -e DATABASE_URL="sqlite://" \
+            fleet-monitor:ci
+
+          for attempt in $(seq 1 15); do
+            if curl -sf http://localhost:8000/health > /dev/null; then
+              echo "API answered after ${attempt}s"
+              curl -s http://localhost:8000/health
+              break
+            fi
+            if [ "$attempt" -eq 15 ]; then
+              echo "API never became ready"
+              docker logs ci-api
+              exit 1
+            fi
+            sleep 1
+          done
+
+          test "$(docker exec ci-api whoami)" = "appuser" \
+            && echo "Confirmed: running as appuser, not root"
+
+          docker rm -f ci-api
