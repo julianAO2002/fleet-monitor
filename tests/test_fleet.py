@@ -39,7 +39,7 @@ def _age_node(session: Session, name: str, silence: timedelta) -> None:
         (60, NodeStatus.ONLINE),
         # The boundaries, where an off-by-one would hide.
         (119, NodeStatus.ONLINE),
-        (120, NodeStatus.ONLINE),
+        (120, NodeStatus.STALE),
         (300, NodeStatus.STALE),
         (599, NodeStatus.STALE),
         (600, NodeStatus.OFFLINE),
