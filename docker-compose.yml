@@ -1,0 +1,89 @@
+# The whole environment, declared. `docker compose up` reproduces it from
+# nothing on any machine with Docker — no manual steps to remember, no commands
+# to write down. This file is the infrastructure, and it is versioned alongside
+# the code that runs on it.
+#
+# Values come from .env (copied from .env.example). Nothing secret is written
+# here, because this file is committed.
+
+services:
+  # ── Database ──────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      # Without this, removing the container destroys every heartbeat ever
+      # recorded. The volume outlives the container, so `docker compose down`
+      # and `up` again finds the fleet exactly as it was.
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # PostgreSQL accepts connections several seconds after the container
+      # starts. This is what lets the API wait for readiness rather than for
+      # mere existence.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    # Not published by default: only the API needs to reach the database, and
+    # it does so over the internal network. Uncomment to inspect it with a
+    # local client.
+    # ports:
+    #   - "5433:5432"
+
+  # ── Central API ───────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # The host is `db` — the service name, resolved by Compose's internal
+      # DNS. Not localhost: inside this container, localhost is the API itself.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      APP_NAME: ${APP_NAME}
+      APP_VERSION: ${APP_VERSION}
+      ENVIRONMENT: ${ENVIRONMENT}
+      STALE_AFTER_SECONDS: ${STALE_AFTER_SECONDS}
+      OFFLINE_AFTER_SECONDS: ${OFFLINE_AFTER_SECONDS}
+    ports:
+      # Published so an operator can reach /docs from the host. The agents do
+      # not use this mapping; they stay on the internal network.
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        # Waits for the database to pass its healthcheck, not merely to have
+        # been created. Without this the API starts first, fails to connect,
+        # and restarts until the timing happens to work out.
+        condition: service_healthy
+
+  # ── Vessel agents ─────────────────────────────────
+  agent:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    restart: unless-stopped
+    environment:
+      # `api` resolves to the API service over the Compose network. Reaching it
+      # on the published host port would mean leaving the network and coming
+      # back in, which only works by accident and not at all in production.
+      API_URL: http://api:8000
+      SW_VERSION: ${AGENT_SW_VERSION}
+      HEARTBEAT_INTERVAL_SECONDS: ${HEARTBEAT_INTERVAL_SECONDS}
+      VESSEL_NAME: ${AGENT_VESSEL_NAME}
+      LOCATION: ${AGENT_LOCATION}
+      # NODE_NAME is left unset on purpose: the agent falls back to a random
+      # suffix, so `--scale agent=3` registers three distinct vessels from one
+      # definition. Setting it here would have all replicas fight over one name.
+    depends_on:
+      api:
+        condition: service_started
+    # No container_name and no published ports: both would make this service
+    # unscalable, since two containers cannot share either.
+
+volumes:
+  pgdata:
