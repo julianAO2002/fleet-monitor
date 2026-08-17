@@ -1,0 +1,52 @@
+# Everything listed here is excluded from the build context: the archive the
+# CLI sends to the Docker daemon before any instruction runs.
+#
+# Two reasons this file exists, and the first one is security. A COPY that
+# swept up .env would bake the database password into an image layer, readable
+# by anyone who pulls it. Excluding it here means it cannot be copied even by
+# accident. The second reason is speed: a smaller context transfers faster and
+# is less likely to invalidate the build cache.
+
+# ── Secrets ─────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Version control ─────────────────────────────────
+# Carries the entire history, which the running application never needs.
+.git
+.gitignore
+.gitattributes
+.github
+
+# ── Virtual environment ─────────────────────────────
+# Built inside the image from requirements.txt. A host venv is compiled for
+# Windows and would be useless in a Linux container anyway.
+venv/
+.venv/
+
+# ── Python artefacts ────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# ── Tooling caches ──────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Tests and local notes ───────────────────────────
+# The runtime image ships the application, not the suite that verifies it.
+tests/
+PLAN.md
+CLAUDE.md
+
+# ── Editors and OS ──────────────────────────────────
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
