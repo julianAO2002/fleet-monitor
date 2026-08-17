@@ -1,3 +1,6 @@
+<!-- Language switcher. GitHub sanitises HTML, so a link is the portable form. -->
+**English** · [Español](README.es.md)
+
 # Deploying to a real fleet
 
 How this project would reach two hundred vessels, and an honest account of
