@@ -12,6 +12,7 @@ in production, which is the whole reason the session was injected rather than
 imported.
 """
 
+import os
 from collections.abc import Generator
 
 import pytest
@@ -50,22 +51,37 @@ def settings_fixture() -> Settings:
 def session_fixture() -> Generator[Session, None, None]:
     """A database that exists only for the duration of one test.
 
-    ``StaticPool`` keeps every connection pointed at the same in-memory
-    database; without it each connection would get its own empty one and the
-    request would not see rows the test just inserted.
+    Defaults to SQLite in memory, which needs nothing installed and makes the
+    suite fast enough to run constantly. Set ``TEST_DATABASE_URL`` to point the
+    same tests at PostgreSQL — CI does this, so the suite runs twice: once for
+    speed and once against the engine that actually ships. SQLite is forgiving
+    in ways PostgreSQL is not, and a test that only ever sees SQLite cannot
+    catch that.
     """
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    database_url = os.getenv("TEST_DATABASE_URL", "sqlite://")
+
+    if database_url.startswith("sqlite"):
+        # SQLite creates a separate in-memory database per connection. Without
+        # StaticPool the request would open a second, empty one and see none of
+        # the rows the test just inserted.
+        engine = create_engine(
+            database_url,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+    else:
+        engine = create_engine(database_url)
+
+    # A real database persists between tests, so start each one from a known
+    # empty schema rather than inheriting whatever the previous test left.
+    SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
         yield session
 
-    # Dropping is belt and braces: the database vanishes with the engine.
     SQLModel.metadata.drop_all(engine)
+    engine.dispose()
 
 
 @pytest.fixture(name="client")
