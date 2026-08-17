@@ -100,7 +100,9 @@ class Agent:
                     log.info("%s already registered, resuming", self._config.node_name)
                     return self._find_existing_id()
 
-                log.warning("registration refused: %s %s", response.status_code, response.text)
+                log.warning(
+                    "registration refused: %s %s", response.status_code, response.text
+                )
 
             except httpx.HTTPError as exc:
                 log.warning("API unreachable (%s), retrying in %.0fs", exc, delay)
@@ -159,7 +161,9 @@ class Agent:
                 self._node_id = self.register()
                 return False
 
-            log.warning("heartbeat rejected: %s %s", response.status_code, response.text)
+            log.warning(
+                "heartbeat rejected: %s %s", response.status_code, response.text
+            )
             return False
 
         except httpx.HTTPError as exc:
